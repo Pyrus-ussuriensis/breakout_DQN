@@ -1,5 +1,6 @@
 from torchrl.collectors import SyncDataCollector
-from torchrl.data.replay_buffers import LazyMemmapStorage, ReplayBuffer
+from torchrl.data.replay_buffers.samplers import PrioritizedSampler
+from torchrl.data.replay_buffers import LazyMemmapStorage, ReplayBuffer, TensorDictReplayBuffer
 import os, shutil
 from config import *
 
@@ -15,12 +16,24 @@ def make_collector(env, train_policy, device):
         split_trajs=True            # 让终止切开
     )
 
-    rb = ReplayBuffer(storage=LazyMemmapStorage(max_size=REPLAY_CAP, scratch_dir=BUFFER_DIR))
-    try:
-        rb = ReplayBuffer(storage=LazyMemmapStorage(max_size=REPLAY_CAP, scratch_dir=BUFFER_DIR))
-    except FileExistsError:
-        shutil.rmtree(BUFFER_DIR, ignore_errors=True)
-        os.makedirs(BUFFER_DIR, exist_ok=True)
-        rb = ReplayBuffer(storage=LazyMemmapStorage(max_size=REPLAY_CAP, scratch_dir=BUFFER_DIR))
+    sampler = PrioritizedSampler(
+        max_capacity=REPLAY_CAP, # 采样器最大容量
+        alpha=0.6,      # 优先级强度，越大越采样损失大的，易过拟合
+        beta=0.4,       # 重要性采样起始，校正
+        eps=1e-6, # offset
+        max_priority_within_buffer=True # 新样本最大优先级
+    )
+
+    shutil.rmtree(BUFFER_DIR, ignore_errors=True)
+    os.makedirs(BUFFER_DIR, exist_ok=True)
+    rb = TensorDictReplayBuffer(
+        storage=LazyMemmapStorage(max_size=REPLAY_CAP, scratch_dir=BUFFER_DIR),
+        sampler=sampler,
+        batch_size=BATCH,   
+        # pin_memory=False, prefetch=None  
+        priority_key="td_error"  # 缺省是 'td_error'
+    )
+    #rb = ReplayBuffer(storage=LazyMemmapStorage(max_size=REPLAY_CAP, scratch_dir=BUFFER_DIR))#, pin_memory=False, prefetch=2, batch_size=BATCH)
 
     return collector, rb
+

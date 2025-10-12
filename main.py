@@ -27,12 +27,14 @@ writer = make_writer()
 opt = make_opt(q_net)
 pbar = make_pbar()
 
+'''
 if LOAD_CKPT:
     gf,lcf,ls = load_checkpoint(path=LOAD_PATH, q_net=q_net, target=target, opt=opt, device=device,
                                                             train_policy=train_policy, rb=rb)
     global_frames, last_ckpt_frame, last_sync = gf, lcf, ls
     pbar = make_pbar(initial=gf*4)
     collector = SyncDataCollector(..., total_frames=max(0, TOTAL_FRAMES-gf))
+'''
 
 def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
     batch = rb.sample(batch_size)
@@ -50,13 +52,26 @@ def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
         q2 = target(s2).gather(1,a2).squeeze(-1)
         y  = r + (1.0 - d.float()) * gamma * q2
 
-    loss = F.smooth_l1_loss(qsa, y)
+    #loss = F.smooth_l1_loss(qsa, y)
+    per_sample = torch.nn.functional.smooth_l1_loss(qsa, y, reduction="none")
+
+    w = batch.get("_weight", torch.ones_like(per_sample, device=per_sample.device)) # 如果没有设置_weight则使用后面的默认为1
+    loss = (per_sample * w).mean()
+
+
+
     opt.zero_grad(set_to_none=True)
     loss.backward()
     torch.nn.utils.clip_grad_norm_(q.parameters(), 10.0)
     opt.step()
 
-    return loss.item()
+    with torch.no_grad():
+        td_err = (qsa - y).abs().detach().cpu()
+    batch.set_("td_error", td_err)  # 给tensordict设置一个参数td_error和action等是并列的。priority_key='td_error'
+    rb.update_tensordict_priority(batch)
+
+    return float(loss.item())
+
 
 
 for batch in collector:

@@ -42,11 +42,11 @@ def save_checkpoint(path, q_net, target, opt, global_frames, last_ckpt_frame, la
     '''
     torch.save(ckpt, path)
 
+'''
 def load_checkpoint(path, q_net, target, opt, device, train_policy=None, rb=None):
     ckpt = torch.load(path, map_location='cpu')
     q_net.load_state_dict(ckpt["q_net"]); target.load_state_dict(ckpt["target"])
     opt.load_state_dict(ckpt["optimizer"])
-    '''
     torch.set_rng_state(ckpt["rng_cpu"])
     if torch.cuda.is_available() and ckpt.get("cuda_rng") is not None:
         torch.cuda.set_rng_state_all(ckpt["cuda_rng"])
@@ -56,8 +56,8 @@ def load_checkpoint(path, q_net, target, opt, device, train_policy=None, rb=None
         train_policy.load_state_dict(ckpt["policy"])
     if rb is not None and "replay" in ckpt and hasattr(rb, "load_state_dict"):
         rb.load_state_dict(ckpt["replay"])
-    '''
     return ckpt.get("global_frames", 0), ckpt.get("last_ckpt_frame"), ckpt.get("last_sync", 0)
+'''
 
 
 def save_final_weights(path, q_net):
