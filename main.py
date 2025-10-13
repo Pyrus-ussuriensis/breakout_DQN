@@ -9,6 +9,9 @@ from log import *
 from opt_pbar import *
 
 
+from torchrl.objectives import DistributionalDQNLoss
+from torchrl.modules import DistributionalQValueModule
+from tensordict.nn import TensorDictSequential
 from torchrl.collectors import SyncDataCollector
 from collections import deque
 import time, os, math
@@ -21,24 +24,20 @@ last_loss_value = 0.0 # 记录最后一次损失，初始值为0.0故开头积�
 
 # 获取其他文件提供的工具
 env = make_env(seed=SEED)
-q_net, target, train_policy, _ = make_policy(env, device)
+q_net, target, train_policy, _, loss_mod = make_policy(env, device)
 collector, rb = make_collector(env, train_policy, device)
 writer = make_writer()
 opt = make_opt(q_net)
 pbar = make_pbar()
 
-'''
-if LOAD_CKPT:
-    gf,lcf,ls = load_checkpoint(path=LOAD_PATH, q_net=q_net, target=target, opt=opt, device=device,
-                                                            train_policy=train_policy, rb=rb)
-    global_frames, last_ckpt_frame, last_sync = gf, lcf, ls
-    pbar = make_pbar(initial=gf*4)
-    collector = SyncDataCollector(..., total_frames=max(0, TOTAL_FRAMES-gf))
-'''
+
 
 def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
+    q_net.train(); q_net.reset_noise()
+    target.eval()
     batch = rb.sample(batch_size)
 
+    '''
     s  = batch["obs"].to(device)
     a  = batch["action"].to(device)
     r  = batch["reward"].to(device)
@@ -54,10 +53,13 @@ def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
 
     #loss = F.smooth_l1_loss(qsa, y)
     per_sample = torch.nn.functional.smooth_l1_loss(qsa, y, reduction="none")
+    '''
+    loss_td = loss_mod(batch)      # loss_td["loss"] 形状：[B]（因为 reduction="none"）
+    per_sample = loss_td["loss"]
 
     w = batch.get("_weight", torch.ones_like(per_sample, device=per_sample.device)).to(device) # 如果没有设置_weight则使用后面的默认为1
-    loss = (per_sample * w).mean()
-
+    #loss = (per_sample * w).mean()
+    loss = (per_sample * w).sum() / (w.sum() + 1e-8)
 
 
     opt.zero_grad(set_to_none=True)
@@ -65,12 +67,20 @@ def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
     torch.nn.utils.clip_grad_norm_(q.parameters(), 10.0)
     opt.step()
 
+    if "index" in batch:
+        batch.set_("td_error", per_sample.detach().cpu())
+        rb.update_tensordict_priority(batch)
+
+    return float(loss.detach().cpu().item())
+
+    '''
     with torch.no_grad():
         td_err = (qsa - y).abs().detach().cpu()
     batch.set("td_error", td_err)  # 给tensordict设置一个参数td_error和action等是并列的。priority_key='td_error'
     rb.update_tensordict_priority(batch)
 
     return float(loss.item())
+    '''
 
 
 
@@ -92,10 +102,10 @@ for batch in collector:
 
     N = obs.shape[0]
     td_tr = TensorDict({
-        "obs":      obs,
+        "pixels":      obs,
         "action":   action,
         "reward":   reward,
-        "next_obs": next_obs,
+        "next_pixels": next_obs,
         "done":     done,
     }, batch_size=[N])
     rb.extend(td_tr)

@@ -2,12 +2,16 @@ import torch
 import torch.nn as nn
 from tensordict.nn import TensorDictModule, TensorDictSequential
 from torchrl.modules import QValueModule, EGreedyModule, NoisyLinear
+from torchrl.modules import DistributionalQValueModule
+from torchrl.objectives import DistributionalDQNLoss
 from config import *
 
 # 根据观察给出动作的网络
 class DQN(nn.Module):
-    def __init__(self, n_actions):
+    def __init__(self, n_actions, n_atoms=51, vmin=-10.0, vmax=10.0):
         super().__init__()
+        self.nA, self.N = n_actions, n_atoms
+        self.register_buffer("support", torch.linspace(vmin, vmax, n_atoms))
         self.net = nn.Sequential(
             nn.Conv2d(4, 32, 8, 4), nn.ReLU(),
             nn.Conv2d(32, 64, 4, 2), nn.ReLU(),
@@ -17,22 +21,22 @@ class DQN(nn.Module):
 
         self.val = nn.Sequential(
             NoisyLinear(64*7*7, 512), nn.ReLU(inplace=True),
-            NoisyLinear(512, 1),      # V(s)
+            NoisyLinear(512, self.N), # V(s)
         )
         self.adv = nn.Sequential(
             NoisyLinear(64*7*7, 512), nn.ReLU(inplace=True),
-            NoisyLinear(512, n_actions),  # A(s,a)
+            NoisyLinear(512, n_actions*self.N), # A(s,a)
         )
 
     def forward(self, x):
         if x.dim() == 3:
             x = x.unsqueeze(0)
         x = x.float() / 255.0
-        h = self.net(x)                  # (B, 64*7*7)
-        V = self.val(h)                   # (B, 1)
-        A = self.adv(h)                   # (B, nA)
-        A_centered = A - A.mean(dim=1, keepdim=True)   # 约束：∑A=0
-        Q = V + A_centered                # (B, nA)
+        h = self.net(x) # (B, 64*7*7)
+        V = self.val(h).unsqueeze(1) # (B, 1, N)
+        A = self.adv(h).view(-1, self.nA, self.N) # (B, nA, N)
+        A = A - A.mean(dim=1, keepdim=True) 
+        Q = V + A # (B, nA)
         return Q
     
     def reset_noise(self):
@@ -42,7 +46,7 @@ class DQN(nn.Module):
 
 class NoisyWrapper:
     def __init__(self, greedy_policy, q_net, k=1):
-        self.greedy = greedy_policy        # TensorDictSequential(actor, qvalue)
+        self.greedy = greedy_policy # TensorDictSequential(actor, qvalue)
         self.q = q_net
         self.k = int(k)
         self.t = 0
@@ -67,8 +71,16 @@ def make_policy(env, device):
     actor = TensorDictModule(
         q_net,
         in_keys=["pixels"],
-        out_keys=["action_value"],
+        out_keys=["param"],
     )
+
+    class DistExpect(torch.nn.Module):
+        def __init__(self, support): super().__init__(); self.register_buffer("support", support.view(1,1,-1))
+        def forward(self, param):    # param: [B, nA, N] (logits)
+            probs = param.softmax(-1)
+            return (probs * self.support.to(param)).sum(-1)  # [B, nA]
+
+    expect_head = TensorDictModule(DistExpect(q_net.support), in_keys=["param"], out_keys=["action_value"])
 
     qvalue = QValueModule(
         spec=env.action_spec,
@@ -78,7 +90,7 @@ def make_policy(env, device):
         safe=True,
     )
 
-    greedy = TensorDictSequential(actor, qvalue).to(device)
+    greedy = TensorDictSequential(actor, expect_head, qvalue).to(device)
     train_policy = NoisyWrapper(greedy, q_net, k=1)
     def eval_policy(td):
         q_net.eval()
@@ -96,4 +108,15 @@ def make_policy(env, device):
     ).to(device)
     '''
 
-    return q_net, target, train_policy, eval_policy
+    q_head_for_loss = DistributionalQValueModule(
+        action_space="categorical",
+        support=q_net.support,
+    )
+    value_net = TensorDictSequential(actor, q_head_for_loss)
+    value_net.action_space = "categorical"
+    loss_mod = DistributionalDQNLoss(
+        value_network=value_net,  # ← 不要传 q_net；传到 action_value 这一层即可
+        gamma=0.99, delay_value=True, reduction="mean",
+    )
+
+    return q_net, target, train_policy, eval_policy, loss_mod
