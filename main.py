@@ -21,7 +21,7 @@ last_loss_value = 0.0 # 记录最后一次损失，初始值为0.0故开头积�
 
 # 获取其他文件提供的工具
 env = make_env(seed=SEED)
-q_net, target, train_policy = make_policy(env, device)
+q_net, target, train_policy, _ = make_policy(env, device)
 collector, rb = make_collector(env, train_policy, device)
 writer = make_writer()
 opt = make_opt(q_net)

@@ -3,3 +3,5 @@
 /videos/
 /runs/
 
+__pycache__/
+*.pyc

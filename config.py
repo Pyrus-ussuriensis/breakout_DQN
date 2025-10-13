@@ -24,6 +24,7 @@ MOMENTUM=0.0
 
 # main
 SEED=0 # 随机种子
+N_STEP = 3
 GAMMA=0.99 # 优化参数
 BATCH=32
 TRAIN_FREQ=4 # 多少帧叠成一帧，决定优化的次数
