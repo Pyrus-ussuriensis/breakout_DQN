@@ -12,26 +12,28 @@ class DQN(nn.Module):
             nn.Conv2d(4, 32, 8, 4), nn.ReLU(),
             nn.Conv2d(32, 64, 4, 2), nn.ReLU(),
             nn.Conv2d(64, 64, 3, 1), nn.ReLU(),
+            nn.Flatten(),
         )
-        '''
-        self.head = nn.Sequential(
-            nn.Linear(64 * 7 * 7, 512), nn.ReLU(),
-            nn.Linear(512, n_actions),
-        )
-        '''
 
-        self.head = nn.Sequential(
-            NoisyLinear(64*7*7, 512), nn.ReLU(),
-            NoisyLinear(512, n_actions),
+        self.val = nn.Sequential(
+            NoisyLinear(64*7*7, 512), nn.ReLU(inplace=True),
+            NoisyLinear(512, 1),      # V(s)
+        )
+        self.adv = nn.Sequential(
+            NoisyLinear(64*7*7, 512), nn.ReLU(inplace=True),
+            NoisyLinear(512, n_actions),  # A(s,a)
         )
 
     def forward(self, x):
         if x.dim() == 3:
-            x = x.unsqueeze(0)                  # (1,4,84,84)
-        x = x.float()/255
-        x = self.net(x)                         # (B,64,7,7)
-        x = x.flatten(start_dim=1)
-        return self.head(x)                     # (B, |A|)
+            x = x.unsqueeze(0)
+        x = x.float() / 255.0
+        h = self.net(x)                  # (B, 64*7*7)
+        V = self.val(h)                   # (B, 1)
+        A = self.adv(h)                   # (B, nA)
+        A_centered = A - A.mean(dim=1, keepdim=True)   # 约束：∑A=0
+        Q = V + A_centered                # (B, nA)
+        return Q
     
     def reset_noise(self):
         for m in self.modules():
