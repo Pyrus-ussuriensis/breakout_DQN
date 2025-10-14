@@ -1,6 +1,7 @@
 from torchrl.collectors import SyncDataCollector
 from torchrl.data.replay_buffers.samplers import PrioritizedSampler
 from torchrl.data.replay_buffers import LazyMemmapStorage, ReplayBuffer, TensorDictReplayBuffer
+from torchrl.envs.transforms import MultiStepTransform
 import os, shutil
 from config import *
 
@@ -32,6 +33,7 @@ def make_collector(env, train_policy, device):
         batch_size=BATCH,   
         # pin_memory=False, prefetch=None  
         priority_key="td_error"  # 缺省是 'td_error'
+        #transform=MultiStepTransform(n_steps=N_STEP, gamma=GAMMA)
     )
     #rb = ReplayBuffer(storage=LazyMemmapStorage(max_size=REPLAY_CAP, scratch_dir=BUFFER_DIR))#, pin_memory=False, prefetch=2, batch_size=BATCH)
 
