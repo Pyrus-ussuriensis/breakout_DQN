@@ -55,7 +55,7 @@ def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
     #loss = F.smooth_l1_loss(qsa, y)
     per_sample = torch.nn.functional.smooth_l1_loss(qsa, y, reduction="none")
 
-    w = batch.get("_weight", torch.ones_like(per_sample, device=per_sample.device)) # 如果没有设置_weight则使用后面的默认为1
+    w = batch.get("_weight", torch.ones_like(per_sample, device=per_sample.device)).to(device) # 如果没有设置_weight则使用后面的默认为1
     loss = (per_sample * w).mean()
 
 
@@ -67,7 +67,7 @@ def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
 
     with torch.no_grad():
         td_err = (qsa - y).abs().detach().cpu()
-    batch.set_("td_error", td_err)  # 给tensordict设置一个参数td_error和action等是并列的。priority_key='td_error'
+    batch.set("td_error", td_err)  # 给tensordict设置一个参数td_error和action等是并列的。priority_key='td_error'
     rb.update_tensordict_priority(batch)
 
     return float(loss.item())
