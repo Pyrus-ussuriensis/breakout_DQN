@@ -35,7 +35,7 @@ pbar = make_pbar()
 def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
     q_net.train(); q_net.reset_noise()
     target.eval()
-    batch = rb.sample(batch_size)
+    batch = rb.sample(batch_size).to(device)
 
     '''
     s  = batch["obs"].to(device)
@@ -55,11 +55,11 @@ def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
     per_sample = torch.nn.functional.smooth_l1_loss(qsa, y, reduction="none")
     '''
     loss_td = loss_mod(batch)      # loss_td["loss"] 形状：[B]（因为 reduction="none"）
-    per_sample = loss_td["loss"]
+    per_sample_grad = loss_td["loss"]
 
-    w = batch.get("_weight", torch.ones_like(per_sample, device=per_sample.device)).to(device) # 如果没有设置_weight则使用后面的默认为1
-    #loss = (per_sample * w).mean()
-    loss = (per_sample * w).sum() / (w.sum() + 1e-8)
+    w = batch.get("_weight", torch.ones_like(per_sample_grad, device=per_sample_grad.device)).to(device) # 如果没有设置_weight则使用后面的默认为1
+    #loss = (per_sample_grad * w).mean()
+    loss = (per_sample_grad * w).sum() / (w.sum() + 1e-8)
 
 
     opt.zero_grad(set_to_none=True)
@@ -67,9 +67,21 @@ def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
     torch.nn.utils.clip_grad_norm_(q.parameters(), 10.0)
     opt.step()
 
+    '''
     if "index" in batch:
         batch.set_("td_error", per_sample.detach().cpu())
         rb.update_tensordict_priority(batch)
+    '''
+    per_sample = loss_td["loss"].detach().abs()      # 形状: [B]
+
+    prio = per_sample.to("cpu").view(-1)             # 要一维 [B]
+    info = TensorDict(
+        {"index": batch["index"].detach().cpu(),
+        "td_error": prio},
+        batch_size=[prio.shape[0]],
+    )
+    rb.update_tensordict_priority(info)
+
 
     return float(loss.detach().cpu().item())
 
@@ -97,16 +109,18 @@ for batch in collector:
     reward = tp(batch["next","reward"]); 
     done   = tp(batch["next","done"])
     action = action.squeeze(-1).long()
-    reward = reward.squeeze(-1).float()
-    done = done.squeeze(-1).bool()
+    #reward = reward.squeeze(-1).float()
+    reward = reward.view(-1,1).float()
+    #done = done.squeeze(-1).bool()
+    done = done.view(-1,1).bool()
 
     N = obs.shape[0]
     td_tr = TensorDict({
-        "pixels":      obs,
-        "action":   action,
-        "reward":   reward,
-        "next_pixels": next_obs,
-        "done":     done,
+        "pixels": obs,
+        "action": action,
+        ("next", "pixels"): next_obs,
+        ("next", "reward"): reward,
+        ("next", "done"): done,
     }, batch_size=[N])
     rb.extend(td_tr)
 

@@ -29,7 +29,7 @@ GAMMA=0.99 # 优化参数
 BATCH=32
 TRAIN_FREQ=4 # 多少帧叠成一帧，决定优化的次数
 #LEARN_STARTS=50_000 # 开始获取数据帧数
-LEARN_STARTS=10_000 # 开始获取数据帧数
+LEARN_STARTS=1_000 # 开始获取数据帧数
 TARGET_SYNC=10_000 # 多少帧同步网络
 CKPT_EVERY_FRAMES = 100_000  # 保存权重的帧数
 

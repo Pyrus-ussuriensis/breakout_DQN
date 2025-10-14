@@ -4,6 +4,7 @@ from tensordict.nn import TensorDictModule, TensorDictSequential
 from torchrl.modules import QValueModule, EGreedyModule, NoisyLinear
 from torchrl.modules import DistributionalQValueModule
 from torchrl.objectives import DistributionalDQNLoss
+from torchrl.modules.tensordict_module import DistributionalQValueActor
 from config import *
 
 # 根据观察给出动作的网络
@@ -33,10 +34,10 @@ class DQN(nn.Module):
             x = x.unsqueeze(0)
         x = x.float() / 255.0
         h = self.net(x) # (B, 64*7*7)
-        V = self.val(h).unsqueeze(1) # (B, 1, N)
-        A = self.adv(h).view(-1, self.nA, self.N) # (B, nA, N)
-        A = A - A.mean(dim=1, keepdim=True) 
-        Q = V + A # (B, nA)
+        V = self.val(h).unsqueeze(-1) # (B, N, 1)
+        A = self.adv(h).view(-1, self.N, self.nA) # (B, N, nA)
+        A = A - A.mean(dim=-1, keepdim=True) 
+        Q = V + A # (B, N, nA)
         return Q
     
     def reset_noise(self):
@@ -71,16 +72,16 @@ def make_policy(env, device):
     actor = TensorDictModule(
         q_net,
         in_keys=["pixels"],
-        out_keys=["param"],
+        out_keys=["action_value"],
     )
 
     class DistExpect(torch.nn.Module):
-        def __init__(self, support): super().__init__(); self.register_buffer("support", support.view(1,1,-1))
-        def forward(self, param):    # param: [B, nA, N] (logits)
-            probs = param.softmax(-1)
-            return (probs * self.support.to(param)).sum(-1)  # [B, nA]
+        def __init__(self, support): super().__init__(); self.register_buffer("support", support.view(1,-1,1).float())
+        def forward(self, param):    # param: [B, N, nA] (logits)
+            probs = param.softmax(1)
+            return (probs * self.support).sum(dim=1)  # [B, nA]
 
-    expect_head = TensorDictModule(DistExpect(q_net.support), in_keys=["param"], out_keys=["action_value"])
+    expect_head = TensorDictModule(DistExpect(q_net.support), in_keys=["action_value"], out_keys=["action_value"])
 
     qvalue = QValueModule(
         spec=env.action_spec,
@@ -108,15 +109,30 @@ def make_policy(env, device):
     ).to(device)
     '''
 
-    q_head_for_loss = DistributionalQValueModule(
-        action_space="categorical",
-        support=q_net.support,
+    value_backbone = TensorDictSequential(
+        TensorDictModule(lambda x: q_net(x),#.permute(0, 2, 1),  # [B,N,nA] -> [B,nA,N]
+                        in_keys=["pixels"], out_keys=["action_value"]),
+        TensorDictModule(lambda x: x.log_softmax(1),          # 对原子维做 log_softmax
+                        in_keys=["action_value"], out_keys=["action_value"]),
     )
-    value_net = TensorDictSequential(actor, q_head_for_loss)
-    value_net.action_space = "categorical"
+
+    actor_loss = TensorDictModule(
+        q_net,
+        in_keys=["pixels"],
+        out_keys=["distr_logits"],
+    )
+    value_net = DistributionalQValueActor(
+        module=actor_loss,
+        in_keys="pixels",
+        support=q_net.support,
+        action_space="categorical",
+        action_value_key="distr_logits",
+        make_log_softmax=True
+    )
     loss_mod = DistributionalDQNLoss(
         value_network=value_net,  # ← 不要传 q_net；传到 action_value 这一层即可
-        gamma=0.99, delay_value=True, reduction="mean",
+        gamma=0.99, delay_value=True, reduction="none",
     )
+    loss_mod.set_keys(action_value="distr_logits")
 
     return q_net, target, train_policy, eval_policy, loss_mod
