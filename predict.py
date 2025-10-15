@@ -20,7 +20,6 @@ def rollout_and_record(weights_path, episodes=3, seed=0, device=None, video_dir=
     state_dict = sd if isinstance(sd, dict) and "q_net" not in sd else sd["q_net"]
     q_net.load_state_dict(state_dict)
 
-    # ---- C51: 分布→期望Q→贪心动作 ----
     actor = TensorDictModule(q_net, in_keys=["pixels"], out_keys=["param"]).to(device)
 
     class DistExpect(torch.nn.Module):
@@ -61,7 +60,7 @@ def rollout_and_record(weights_path, episodes=3, seed=0, device=None, video_dir=
 
     env.close()
     print("returns:", returns)
-    print(f"🎬 视频保存在: {os.path.abspath(video_dir)}")
+    print(f"videos are saved at: {os.path.abspath(video_dir)}")
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

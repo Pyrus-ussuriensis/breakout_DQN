@@ -37,23 +37,7 @@ def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
     target.eval()
     batch = rb.sample(batch_size).to(device)
 
-    '''
-    s  = batch["obs"].to(device)
-    a  = batch["action"].to(device)
-    r  = batch["reward"].to(device)
-    s2 = batch["next_obs"].to(device)
-    d  = batch["done"].to(device)
 
-    a   = a.long().view(-1, 1) 
-    qsa = q(s).gather(1,a).squeeze(1)
-    with torch.no_grad():
-        a2 = q(s2).argmax(1, keepdim=True)
-        q2 = target(s2).gather(1,a2).squeeze(-1)
-        y  = r + (1.0 - d.float()) * gamma * q2
-
-    #loss = F.smooth_l1_loss(qsa, y)
-    per_sample = torch.nn.functional.smooth_l1_loss(qsa, y, reduction="none")
-    '''
     loss_td = loss_mod(batch)      # loss_td["loss"] 形状：[B]（因为 reduction="none"）
     per_sample_grad = loss_td["loss"]
 
@@ -67,11 +51,6 @@ def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
     torch.nn.utils.clip_grad_norm_(q.parameters(), 10.0)
     opt.step()
 
-    '''
-    if "index" in batch:
-        batch.set_("td_error", per_sample.detach().cpu())
-        rb.update_tensordict_priority(batch)
-    '''
     per_sample = loss_td["loss"].detach().abs()      # 形状: [B]
 
     prio = per_sample.to("cpu").view(-1)             # 要一维 [B]
@@ -84,15 +63,6 @@ def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
 
 
     return float(loss.detach().cpu().item())
-
-    '''
-    with torch.no_grad():
-        td_err = (qsa - y).abs().detach().cpu()
-    batch.set("td_error", td_err)  # 给tensordict设置一个参数td_error和action等是并列的。priority_key='td_error'
-    rb.update_tensordict_priority(batch)
-
-    return float(loss.item())
-    '''
 
 
 
@@ -109,9 +79,7 @@ for batch in collector:
     reward = tp(batch["next","reward"]); 
     done   = tp(batch["next","done"])
     action = action.squeeze(-1).long()
-    #reward = reward.squeeze(-1).float()
     reward = reward.view(-1,1).float()
-    #done = done.squeeze(-1).bool()
     done = done.view(-1,1).bool()
 
     N = obs.shape[0]

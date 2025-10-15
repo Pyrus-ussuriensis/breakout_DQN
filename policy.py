@@ -91,30 +91,13 @@ def make_policy(env, device):
         safe=True,
     )
 
+    # 贪心头
     greedy = TensorDictSequential(actor, expect_head, qvalue).to(device)
     train_policy = NoisyWrapper(greedy, q_net, k=1)
     def eval_policy(td):
         q_net.eval()
         return greedy(td)
 
-    '''
-    train_policy = TensorDictSequential(
-        greedy,
-        EGreedyModule(
-            spec=env.action_spec,
-            action_key="action",
-            eps_init=EPS_INIT, eps_end=EPS_END,
-            annealing_num_steps=EPS_DECAY,
-        ),
-    ).to(device)
-    '''
-
-    value_backbone = TensorDictSequential(
-        TensorDictModule(lambda x: q_net(x),#.permute(0, 2, 1),  # [B,N,nA] -> [B,nA,N]
-                        in_keys=["pixels"], out_keys=["action_value"]),
-        TensorDictModule(lambda x: x.log_softmax(1),          # 对原子维做 log_softmax
-                        in_keys=["action_value"], out_keys=["action_value"]),
-    )
 
     actor_loss = TensorDictModule(
         q_net,
@@ -129,6 +112,7 @@ def make_policy(env, device):
         action_value_key="distr_logits",
         make_log_softmax=True
     )
+    # 损失头
     loss_mod = DistributionalDQNLoss(
         value_network=value_net,  # ← 不要传 q_net；传到 action_value 这一层即可
         gamma=0.99, delay_value=True, reduction="none",
