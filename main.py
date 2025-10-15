@@ -27,15 +27,9 @@ writer = make_writer()
 opt = make_opt(q_net)
 pbar = make_pbar()
 
-'''
-if LOAD_CKPT:
-    gf,lcf,ls = load_checkpoint(path=LOAD_PATH, q_net=q_net, target=target, opt=opt, device=device,
-                                                            train_policy=train_policy, rb=rb)
-    global_frames, last_ckpt_frame, last_sync = gf, lcf, ls
-    pbar = make_pbar(initial=gf*4)
-    collector = SyncDataCollector(..., total_frames=max(0, TOTAL_FRAMES-gf))
-'''
 
+
+# 训练主流程
 def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
     batch = rb.sample(batch_size)
 
@@ -73,7 +67,7 @@ def train_step(rb, q, target, opt, device, gamma=0.99, batch_size=32):
     return float(loss.item())
 
 
-
+# 收集数据流程
 for batch in collector:
     T, P  = batch.batch_size
     T_eff = batch["next", "reward"].shape[0]
@@ -103,16 +97,19 @@ for batch in collector:
     global_frames += N
     pbar.update(N) 
 
+    # 开始收集数据不优化网络，到达一定数量后按照每次收集的数据的量更新网络
     if global_frames > LEARN_STARTS:
         updates = max(1, N // TRAIN_FREQ)
         for _ in range(updates):
             last_loss_value = train_step(rb, q_net, target, opt, device, gamma=GAMMA, batch_size=BATCH)
 
+    # 多少帧间隔后同步网络权重
     if global_frames - last_sync >= TARGET_SYNC:
         k = (global_frames - last_sync) // TARGET_SYNC
         target.load_state_dict(q_net.state_dict())
         last_sync += TARGET_SYNC*k
 
+    # 间隔多少帧后保存权重
     if global_frames - last_ckpt_frame >= CKPT_EVERY_FRAMES:
         save_checkpoint(os.path.join(CKPT_DIR, f"ckpt_{global_frames}.pt"),
                         q_net, target, opt, global_frames, last_ckpt_frame, last_sync, train_policy=train_policy, rb=rb)

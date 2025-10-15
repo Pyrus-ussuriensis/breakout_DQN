@@ -4,7 +4,7 @@ from tensordict.nn import TensorDictModule, TensorDictSequential
 from torchrl.modules import QValueModule, EGreedyModule, NoisyLinear
 from config import *
 
-# 根据观察给出动作的网络
+# 根据观察给出动作价值的网络
 class DQN(nn.Module):
     def __init__(self, n_actions):
         super().__init__()
@@ -79,21 +79,11 @@ def make_policy(env, device):
     )
 
     greedy = TensorDictSequential(actor, qvalue).to(device)
-    train_policy = NoisyWrapper(greedy, q_net, k=1)
+    train_policy = NoisyWrapper(greedy, q_net, k=4) # 包装后每隔几步会重新调整噪声，代替了epsilon
     def eval_policy(td):
         q_net.eval()
         return greedy(td)
 
-    '''
-    train_policy = TensorDictSequential(
-        greedy,
-        EGreedyModule(
-            spec=env.action_spec,
-            action_key="action",
-            eps_init=EPS_INIT, eps_end=EPS_END,
-            annealing_num_steps=EPS_DECAY,
-        ),
-    ).to(device)
-    '''
+    
 
     return q_net, target, train_policy, eval_policy

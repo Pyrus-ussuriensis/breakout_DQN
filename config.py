@@ -3,10 +3,12 @@ device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # data 
 # 总的训练的帧数限制，通过限制collector的总数实现，但进度条显示原始帧，因为四帧压为一帧故原始帧为4倍，同时结尾会不到4帧，故最后进度条中的帧数会为3倍多
-#TOTAL_FRAMES = 5000000
-TOTAL_FRAMES = 10000
+TOTAL_FRAMES = 5000000
+#TOTAL_FRAMES = 10000
 #REPLAY_CAP=500_000 # 缓冲区的容量
-REPLAY_CAP=1000 # 缓冲区的容量
+REPLAY_CAP=200_000 # 缓冲区的容量
+#REPLAY_CAP=1000 # 缓冲区的容量
+FRAMES_PER_BATCH=256
 BUFFER_DIR="/home/larry/buffer/torchrl_rb" # 缓冲区如果全部存内存可能不够，一部分存硬盘，这里指定路径
 
 # log
@@ -24,12 +26,13 @@ MOMENTUM=0.0
 
 # main
 SEED=0 # 随机种子
-N_STEP = 3
+#N_STEP = 3 # 没有使用
 GAMMA=0.99 # 优化参数
-BATCH=32
+#BATCH=32
+BATCH=16
 TRAIN_FREQ=4 # 多少帧叠成一帧，决定优化的次数
-#LEARN_STARTS=50_000 # 开始获取数据帧数
-LEARN_STARTS=10_000 # 开始获取数据帧数
+LEARN_STARTS=50_000 # 开始获取数据帧数
+#LEARN_STARTS=10_000 # 开始获取数据帧数
 TARGET_SYNC=10_000 # 多少帧同步网络
 CKPT_EVERY_FRAMES = 100_000  # 保存权重的帧数
 

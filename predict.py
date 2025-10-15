@@ -52,9 +52,9 @@ def rollout_and_record(weights_path,
 
     env.close()
     print("returns:", returns)
-    print(f"🎬 视频保存在: {os.path.abspath(video_dir)}")
+    print(f"videos are saved at: {os.path.abspath(video_dir)}")
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    rollout_and_record("./checkpoints/q_net_final.pt",
+    rollout_and_record("./checkpoints/ckpt_802143.pt",
                        episodes=10, seed=0, device=device, video_dir="./videos")

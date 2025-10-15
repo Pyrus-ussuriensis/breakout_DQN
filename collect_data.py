@@ -11,7 +11,7 @@ def make_collector(env, train_policy, device):
         policy_device=device,
         env_device='cpu',
         storing_device='cpu',
-        frames_per_batch=1024,      # 每批收多少帧
+        frames_per_batch=FRAMES_PER_BATCH,      # 每批收多少帧
         total_frames=TOTAL_FRAMES,     # 总帧数上限
         split_trajs=True            # 让终止切开
     )
