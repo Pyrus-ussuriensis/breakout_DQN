@@ -7,8 +7,6 @@ import torch.nn.functional as F
 from tensordict import TensorDict
 from log import *
 from opt_pbar import *
-
-
 from torchrl.collectors import SyncDataCollector
 from collections import deque
 import time, os, math

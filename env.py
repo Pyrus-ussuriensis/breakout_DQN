@@ -30,12 +30,15 @@ def make_env(seed=0, record_video=False, video_dir=None, video_trigger=None, eva
     # 需要放到最后，才能录制多个视频，因为后面的只要reset就会影响前面的
     # 如果放在前面EpisodicLifeEnv能够吞掉一般的reset，能够录制一个长视频，但是真的结束时仍然会结束
     if record_video:
+        from time import strftime
+        from uuid import uuid4
+        run = f"eval_{strftime('%Y%m%d-%H%M%S')}_{uuid4().hex[:6]}"
         os.makedirs(video_dir, exist_ok=True)
         env = RecordVideo(env, video_folder=video_dir,
                           episode_trigger=(video_trigger or (lambda ep: True)),
                           #step_trigger=lambda ep: ep == 0,  # 一开始就录
                           #video_length=10_000_000,              # 足够长
-                          name_prefix="eval_all")
+                          name_prefix=run)
      
     
     env = gym.wrappers.RecordEpisodeStatistics(env)

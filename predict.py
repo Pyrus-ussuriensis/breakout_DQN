@@ -5,13 +5,15 @@ from torchrl.modules import QValueModule
 
 from env import make_env       
 from policy import DQN          
+from pathlib import Path
 
 @torch.no_grad()
 def rollout_and_record(weights_path,
                        episodes=3,
                        seed=0,
                        device=None,
-                       video_dir="./videos"):
+                       video_dir="./videos",
+                       ):
     os.makedirs(video_dir, exist_ok=True)
     device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -54,7 +56,28 @@ def rollout_and_record(weights_path,
     print("returns:", returns)
     print(f"videos are saved at: {os.path.abspath(video_dir)}")
 
+# 批量处理一个文件夹中所有的权重文件进行处理
+# 两个参数分别指定存放权重文件的文件夹和保存视频的位置
+def process_all(checkpoints_path=f"/mnt/d/Projects/breakout/checkpoints/", videos_path=f"./videos/store"):
+    def iter_files(dirpath, pattern="*", recursive=True):
+        p = Path(dirpath)
+        it = p.rglob(pattern) if recursive else p.glob(pattern)
+        for f in it:
+            if f.is_file():
+                yield f
+
+    def process_one(fp: Path):
+        rollout_and_record(fp, episodes=10, seed=0, device=device, video_dir=videos_path)
+
+    for fp in iter_files(checkpoints_path, pattern="*.*", recursive=True):
+        process_one(fp)
+
+
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    rollout_and_record("./checkpoints/ckpt_802143.pt",
-                       episodes=10, seed=0, device=device, video_dir="./videos")
+    #rollout_and_record("./checkpoints/q_net_final.pt", episodes=10, seed=0, device=device, video_dir="./videos") # 单个
+    process_all() # 多个
+
+
+
+
